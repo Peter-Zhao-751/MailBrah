@@ -87,6 +87,33 @@ function isDuplicate_(title, start, end) {
   return false;
 }
 
+/**
+ * Earliest free gap of the given length on the given day, inside the waking
+ * window (DAY_START_HOUR–DAY_END_HOUR) and never in the past. Checks the
+ * calendar once and scans in 30-min steps. Falls back to the window start if
+ * the day is fully booked (the caller surfaces the conflict).
+ */
+function findEarliestFreeSlot_(onDate, durationMs) {
+  var dayStart = new Date(onDate.getFullYear(), onDate.getMonth(), onDate.getDate(), CONFIG.DAY_START_HOUR, 0, 0);
+  var dayEnd = new Date(onDate.getFullYear(), onDate.getMonth(), onDate.getDate(), CONFIG.DAY_END_HOUR, 0, 0);
+  var t = new Date(Math.max(dayStart.getTime(), Date.now() + 15 * 60 * 1000));
+  t.setSeconds(0, 0);
+  t.setMinutes(t.getMinutes() + ((30 - t.getMinutes() % 30) % 30)); // round up to :00/:30
+
+  var busy = getCalendar_().getEvents(dayStart, dayEnd)
+    .filter(function (ev) { return !ev.isAllDayEvent(); });
+
+  while (t.getTime() + durationMs <= dayEnd.getTime()) {
+    var end = new Date(t.getTime() + durationMs);
+    var clash = busy.some(function (ev) {
+      return ev.getStartTime() < end && ev.getEndTime() > t;
+    });
+    if (!clash) return t;
+    t = new Date(t.getTime() + 30 * 60 * 1000);
+  }
+  return dayStart;
+}
+
 /** Existing non-all-day events overlapping [start, end): [{title, label}] */
 function findConflicts_(start, end) {
   return getCalendar_().getEvents(start, end)
@@ -227,7 +254,7 @@ function tryReschedule_(title, start, end) {
         }
       } else if (entry.a.indexOf('t:') === 0) {
         Tasks.Tasks.patch({
-          title: '📝 ' + title + ' — due ' + Utilities.formatDate(start, CONFIG.TIMEZONE, 'h:mm a'),
+          title: title + ' — due ' + Utilities.formatDate(start, CONFIG.TIMEZONE, 'h:mm a'),
           due: Utilities.formatDate(start, CONFIG.TIMEZONE, 'yyyy-MM-dd') + 'T00:00:00.000Z'
         }, '@default', entry.a.slice(2));
         moved = true;

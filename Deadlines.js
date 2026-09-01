@@ -5,7 +5,7 @@
  * scrolls into the past.
  *
  * The Tasks API stores only the due DATE (it discards the time), so the exact
- * time lives in the task title: "📝 PHYS 152 HW 4 — due 11:59 PM".
+ * time lives in the task title: "PHYS 152 — HW 4 — due 11:59 PM".
  * If the Tasks service is unavailable for any reason, falls back to an
  * all-day calendar event with the time in the title.
  */
@@ -24,7 +24,7 @@ function createDeadlineTask_(evt) {
 
   try {
     var task = Tasks.Tasks.insert({
-      title: '📝 ' + evt.title + ' — due ' + timeStr,
+      title: evt.title + ' — due ' + timeStr,
       notes: notes,
       // Date-only (local due date); the API discards any time component.
       due: Utilities.formatDate(evt.start, CONFIG.TIMEZONE, 'yyyy-MM-dd') + 'T00:00:00.000Z'
@@ -34,7 +34,7 @@ function createDeadlineTask_(evt) {
   } catch (err) {
     Logger.log('Tasks insert failed (%s) — falling back to an all-day event.', err);
     var fallback = getCalendar_().createAllDayEvent(
-      '📝 Due ' + timeStr + ' — ' + evt.title,
+      evt.title + ' — due ' + timeStr,
       stripTime_(evt.start),
       { description: notes }
     );

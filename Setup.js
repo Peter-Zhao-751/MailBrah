@@ -46,17 +46,27 @@ function setup() {
     GmailApp.createLabel(CONFIG.PROCESSED_LABEL);
   }
 
-  // 3. Recurring trigger (replaces any existing MailBrah trigger).
+  // 3. Recurring triggers (replaces any existing MailBrah triggers):
+  //    the scan every few minutes, and the daily morning digest.
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'processInbox') ScriptApp.deleteTrigger(t);
+    var fn = t.getHandlerFunction();
+    if (fn === 'processInbox' || fn === 'sendDailyDigest') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('processInbox')
     .timeBased()
     .everyMinutes(CONFIG.TRIGGER_EVERY_MINUTES)
     .create();
+  ScriptApp.newTrigger('sendDailyDigest')
+    .timeBased()
+    .everyDays(1)
+    .atHour(CONFIG.DIGEST_HOUR)
+    .nearMinute(CONFIG.DIGEST_MINUTE)
+    .create();
 
-  Logger.log('Setup complete. processInbox runs every %s minutes. ' +
-    'Run processInbox() now for an immediate first scan.', CONFIG.TRIGGER_EVERY_MINUTES);
+  Logger.log('Setup complete. processInbox runs every %s minutes; the digest ' +
+    'goes out daily around %s:%s. Run processInbox() now for an immediate first scan.',
+    CONFIG.TRIGGER_EVERY_MINUTES, CONFIG.DIGEST_HOUR,
+    ('0' + CONFIG.DIGEST_MINUTE).slice(-2));
 }
 
 /**
@@ -144,6 +154,86 @@ function dryRunLatest() {
 }
 
 /**
+ * One-shot health check: verifies every subsystem and logs a PASS/FAIL
+ * report. Read-only — creates nothing, sends nothing.
+ */
+function runDiagnostics() {
+  var props = PropertiesService.getScriptProperties();
+  var report = [];
+  var add = function (status, label, detail) {
+    report.push(status + '  ' + label + (detail ? ' — ' + detail : ''));
+  };
+
+  try {
+    var probe = callGemini_('Return JSON with an empty events array.', GEMINI_EVENTS_SCHEMA);
+    add(probe ? 'PASS' : 'FAIL', 'Gemini API', 'model ' + CONFIG.GEMINI_MODEL);
+  } catch (err) { add('FAIL', 'Gemini API', String(err).slice(0, 140)); }
+
+  try {
+    add(GmailApp.getUserLabelByName(CONFIG.PROCESSED_LABEL) ? 'PASS' : 'FAIL',
+      'Gmail label "' + CONFIG.PROCESSED_LABEL + '"');
+    var waiting = GmailApp.search(CONFIG.SEARCH_QUERY, 0, 1);
+    add('PASS', 'Gmail search', waiting.length ? 'unprocessed USC mail is waiting' : 'no unprocessed USC mail right now');
+  } catch (err) { add('FAIL', 'Gmail access', String(err).slice(0, 140)); }
+
+  try {
+    add('PASS', 'Calendar', '"' + getCalendar_().getName() + '"');
+  } catch (err) { add('FAIL', 'Calendar', String(err).slice(0, 140)); }
+
+  try {
+    var lists = Tasks.Tasklists.list();
+    var n = (lists && lists.items ? lists.items.length : 0);
+    add(n ? 'PASS' : 'FAIL', 'Google Tasks service', n + ' task list(s)');
+  } catch (err) {
+    add('FAIL', 'Google Tasks service',
+      String(err).slice(0, 100) + ' (deadlines fall back to all-day events)');
+  }
+
+  var handlers = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  add(handlers.indexOf('processInbox') !== -1 ? 'PASS' : 'FAIL', 'Scan trigger', 'every ' + CONFIG.TRIGGER_EVERY_MINUTES + ' min');
+  add(handlers.indexOf('sendDailyDigest') !== -1 ? 'PASS' : 'FAIL', 'Digest trigger', '~' + CONFIG.DIGEST_HOUR + ':' + ('0' + CONFIG.DIGEST_MINUTE).slice(-2) + ' daily');
+
+  add('INFO', 'Gradescope', gradescopeConfigured_() ? 'configured' : 'not configured (optional)');
+  add('INFO', 'Brightspace', brightspaceConfigured_() ? 'configured' : 'not configured (optional)');
+
+  var lastRun = props.getProperty(PROPS.LAST_RUN);
+  add(lastRun ? 'PASS' : 'FAIL', 'Last scan', lastRun
+    ? Utilities.formatDate(new Date(Number(lastRun)), CONFIG.TIMEZONE, 'MMM d, h:mm a')
+    : 'never — run processInbox()');
+  add('INFO', 'Pending decisions', String(listPending_().length));
+  add('INFO', 'Remembered decisions', String(Object.keys(getDecided_()).length));
+  add('INFO', 'Seen messages', String(getSeenMessageIds_().length));
+
+  Logger.log('\n%s', report.join('\n'));
+}
+
+/**
+ * End-to-end task test: creates ONE real Google Task due tomorrow 5 PM
+ * through the exact production path. Tells you where to look for it.
+ * Remove it with clearTestCard() (or just check it off).
+ */
+function testTaskCreation() {
+  var due = new Date();
+  due = new Date(due.getFullYear(), due.getMonth(), due.getDate() + 1, 17, 0, 0);
+  var created = createDeadlineTask_({
+    title: '[MailBrah Test] Task check',
+    start: due,
+    description: 'Created by testTaskCreation() — clearTestCard() removes it.',
+    sourceSubject: 'diagnostics'
+  });
+  if (created === 'task') {
+    Logger.log('Created a real Google TASK due tomorrow 5:00 PM. Where to look:\n' +
+      '  1. calendar.google.com — tick the "Tasks" checkbox under My calendars (left sidebar), then look at TOMORROW.\n' +
+      '  2. Google Calendar phone app — ☰ menu, make sure Tasks is ticked; check tomorrow.\n' +
+      '  3. The Google Tasks app / Gmail right sidebar — shows it in list form immediately.\n' +
+      'Clean up with clearTestCard().');
+  } else {
+    Logger.log('Tasks service unavailable — it fell back to an all-day calendar EVENT tomorrow. ' +
+      'Check that appsscript.json has the Tasks advanced service and re-authorize (run any function and accept).');
+  }
+}
+
+/**
  * Phone test for the Gmail card: seeds three fake pending events (a plain
  * one, one with a conflict warning, and a deadline) and sends the real
  * notification email. On your phone: open that email in the Gmail app,
@@ -199,7 +289,7 @@ function seedTestCard() {
     });
     if (added) titles.push(s.title);
   });
-  if (titles.length) sendDecisionNotification_(titles);
+  if (titles.length) sendUrgentNotification_(titles);
   Logger.log('%s test entr%s seeded%s. Phone: open the "[MailBrah]" email in the Gmail app, ' +
     'scroll to the bottom of the message, tap the MailBrah icon. Desktop: MailBrah icon in ' +
     'Gmail\'s right side panel. Clean up with clearTestCard().',

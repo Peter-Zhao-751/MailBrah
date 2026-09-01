@@ -93,14 +93,31 @@ Google Calendar as the target.
    the card with pending events, conflict warnings, and the
    **✔ Add to calendar** / **✖ Decline** buttons.
 
+### 4b. Reply commands (decide by just answering the email)
+When a `[MailBrah]` email arrives (the morning digest or a same-day alert),
+you can simply **reply in plain words** — no buttons, no links:
+
+> add the career fair, decline the rest
+
+> decline everything. also add dinner with Alex Friday 7pm
+
+Gemini interprets the reply against the pending list on the next scan
+(within your trigger interval), acts on it — including creating brand-new
+events/deadlines you mention — and answers in the same thread with a
+confirmation of exactly what it did.
+
 ### 5. How you'll actually use it day-to-day
 - Committed events just appear on your calendar (with the source email linked
   in the description).
-- When MailBrah is unsure about something, it emails you
-  `[MailBrah] N event(s) need your decision`. Open that email on your phone,
-  tap the MailBrah chip at the bottom, and accept/decline each event. Cards
-  show **⚠️ Conflict** with the exact overlapping event when your calendar
-  isn't free. (Turn these emails off with `SEND_DECISION_NOTIFICATIONS: false`.)
+- When MailBrah is unsure about something, it queues it and tells you by
+  email exactly once a day: the **morning digest** (~8:30 AM, after the
+  daily USC email flood; silent if nothing is pending) lists everything
+  waiting. The only exception is something discovered that's **happening
+  today** — that sends an immediate alert. Reply to either in plain words,
+  or tap the MailBrah chip at the bottom of the message for buttons; the
+  chip on any open email always shows the live queue regardless. (All
+  notification emails off: `SEND_DECISION_NOTIFICATIONS: false`; digest
+  time: `DIGEST_HOUR`/`DIGEST_MINUTE`.)
 
 ---
 

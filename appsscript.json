@@ -29,7 +29,6 @@
     "common": {
       "name": "MailBrah",
       "logoUrl": "https://www.gstatic.com/images/icons/material/system/2x/event_googblue_48dp.png",
-      "useLocaleFromApp": true,
       "homepageTrigger": {
         "runFunction": "onHomepage",
         "enabled": true

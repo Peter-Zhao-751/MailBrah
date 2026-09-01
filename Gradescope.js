@@ -43,7 +43,7 @@ function processGradescope_(stats) {
       var title = course.shortName + ' — ' + a.title;
       var end = new Date(a.due.getTime() + 60 * 60 * 1000);
       if (tryReschedule_(title, a.due, end)) {       // due time changed on Gradescope
-        stats.updated.push('📝 ' + title);
+        stats.updated.push(title);
         return;
       }
       if (isDuplicate_(title, a.due, end)) return;   // task/email already handled it
@@ -53,7 +53,7 @@ function processGradescope_(stats) {
         description: 'Gradescope assignment for ' + course.shortName,
         sourceSubject: 'Gradescope: ' + course.shortName
       });
-      stats.added.push('📝 ' + title);
+      stats.added.push(title);
       Logger.log('Gradescope: task added — %s (due %s)', title,
         Utilities.formatDate(a.due, CONFIG.TIMEZONE, 'MMM d h:mm a'));
     });

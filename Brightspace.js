@@ -40,7 +40,7 @@ function processBrightspace_(stats) {
       if (due.getTime() < now || due.getTime() > horizon) return;
       var dueEnd = new Date(due.getTime() + 60 * 60 * 1000);
       if (tryReschedule_(cls.title, due, dueEnd)) {
-        stats.updated.push('📝 ' + cls.title);
+        stats.updated.push(cls.title);
         return;
       }
       if (isDuplicate_(cls.title, due, dueEnd)) return;
@@ -50,7 +50,7 @@ function processBrightspace_(stats) {
         description: 'Brightspace: ' + ev.summary,
         sourceSubject: 'Brightspace calendar feed'
       });
-      stats.added.push('📝 ' + cls.title);
+      stats.added.push(cls.title);
       Logger.log('Brightspace: task added — %s (due %s)', cls.title,
         Utilities.formatDate(due, CONFIG.TIMEZONE, 'MMM d h:mm a'));
       return;
@@ -94,7 +94,13 @@ function processBrightspace_(stats) {
       sourceMsgId: '',
       createdAt: Date.now()
     });
-    if (added) stats.pendingNew.push(cls.title);
+    if (added) {
+      stats.pendingNew.push({
+        title: cls.title,
+        startsToday: Utilities.formatDate(start, CONFIG.TIMEZONE, 'yyyyMMdd') ===
+          Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyyMMdd')
+      });
+    }
   });
 
   props.setProperty(PROPS.BS_LAST, String(Date.now()));

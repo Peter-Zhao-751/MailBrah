@@ -55,6 +55,14 @@ function processInboxLocked_() {
   var llmCalls = 0;
   var stats = { emails: 0, added: [], updated: [], pendingNew: [], dupes: 0, ignored: 0, skipped: 0, errors: 0 };
 
+  // Act on reply commands first, so decisions land before new pending items
+  // pile on top of them. A failure here never blocks the email scan.
+  try {
+    processReplies_(stats);
+  } catch (err) {
+    Logger.log('Reply processing failed (scan continues): %s', err);
+  }
+
   for (var t = 0; t < threads.length; t++) {
     var thread = threads[t];
     var messages = thread.getMessages();
@@ -152,14 +160,22 @@ function processInboxLocked_() {
     }
   }
 
-  pruneDecided_();
+  // Pruning reads the whole property store — a few times a day is plenty.
+  var lastPrune = Number(props.getProperty(PROPS.PRUNE_LAST) || 0);
+  if (Date.now() - lastPrune > 6 * 3600 * 1000) {
+    pruneDecided_();
+    props.setProperty(PROPS.PRUNE_LAST, String(Date.now()));
+  }
   props.setProperty(PROPS.LAST_RUN, String(Date.now()));
 
-  if (stats.pendingNew.length && CONFIG.SEND_DECISION_NOTIFICATIONS) {
+  // Everything else waits for the morning digest; only newly discovered
+  // items happening TODAY warrant an immediate email.
+  var urgent = stats.pendingNew.filter(function (p) { return p.startsToday; });
+  if (urgent.length && CONFIG.SEND_DECISION_NOTIFICATIONS) {
     try {
-      sendDecisionNotification_(stats.pendingNew);
+      sendUrgentNotification_(urgent.map(function (p) { return p.title; }));
     } catch (err) {
-      Logger.log('Decision notification failed (run state already saved): %s', err);
+      Logger.log('Urgent notification failed (run state already saved): %s', err);
     }
   }
   Logger.log('MailBrah run: %s analyzed, %s skipped by pre-filter, %s added, %s time-updated, %s pending, %s dupes, %s ignored, %s errors',
@@ -246,31 +262,72 @@ function handleExtractedEvent_(evt, msg, stats) {
     sourceMsgId: msg.getId(),
     createdAt: Date.now()
   });
-  if (added) stats.pendingNew.push(evt.title);
-  else stats.dupes++;
+  if (added) {
+    stats.pendingNew.push({
+      title: evt.title,
+      startsToday: Utilities.formatDate(start, CONFIG.TIMEZONE, 'yyyyMMdd') ===
+        Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyyMMdd')
+    });
+  } else {
+    stats.dupes++;
+  }
 }
 
-/**
- * Email yourself a summary of new pending events. Opening this email in the
- * Gmail app shows the MailBrah contextual card with Accept/Decline buttons.
- */
-function sendDecisionNotification_(titles) {
-  var me = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
-  if (!me) {
-    Logger.log('No user email available; skipping decision notification.');
-    return;
-  }
-  var count = listPending_().length;
+/** Immediate email — only for newly discovered items happening TODAY. */
+function sendUrgentNotification_(titles) {
+  var me = notificationRecipient_();
+  if (!me) return;
   var body = [
-    'MailBrah found ' + titles.length + ' new event(s) it wasn\'t sure about:',
+    'MailBrah just found ' + (titles.length === 1 ? 'something' : titles.length + ' things') +
+      ' happening TODAY:',
     '',
     titles.map(function (t) { return '  • ' + t; }).join('\n'),
     '',
-    'Open this email in the Gmail app and tap the MailBrah add-on icon',
-    '(bottom of the message) to accept or decline each one.',
-    'Total awaiting decision: ' + count
+    replyHint_(),
+    'Everything else waits for the morning digest. Total awaiting decision: ' +
+      listPending_().length
   ].join('\n');
-  GmailApp.sendEmail(me, '[MailBrah] ' + titles.length + ' event(s) need your decision', body);
+  GmailApp.sendEmail(me, '[MailBrah] Happening today — ' + titles.length + ' decision(s)', body);
+}
+
+/**
+ * Daily digest, fired by its own ~8:30 AM trigger (installed by setup()).
+ * One email a day listing everything pending; silent when there is nothing.
+ */
+function sendDailyDigest() {
+  if (!CONFIG.SEND_DECISION_NOTIFICATIONS) return;
+  var pending = listPending_();
+  if (!pending.length) return;
+  var me = notificationRecipient_();
+  if (!me) return;
+  var lines = pending.map(function (p) {
+    var when = p.kind === 'deadline'
+      ? 'Due ' + Utilities.formatDate(new Date(p.startIso), CONFIG.TIMEZONE, 'EEE, MMM d · h:mm a')
+      : formatEventWhen_(new Date(p.startIso), new Date(p.endIso), p.allDay);
+    return '  • ' + when + ' — ' + p.title +
+      (p.conflicts && p.conflicts.length ? '  [conflicts with ' + p.conflicts[0] + ']' : '');
+  });
+  var body = [
+    'Good morning — ' + pending.length + ' decision(s) waiting:',
+    '',
+    lines.join('\n'),
+    '',
+    replyHint_()
+  ].join('\n');
+  GmailApp.sendEmail(me, '[MailBrah] Morning digest — ' + pending.length + ' decision(s) waiting', body);
+}
+
+function notificationRecipient_() {
+  var me = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  if (!me) Logger.log('No user email available; skipping notification.');
+  return me;
+}
+
+function replyHint_() {
+  return 'Just REPLY to this email in plain words and it happens within minutes —\n' +
+    'e.g. "add the career fair, decline the rest" or "also add lunch with Sam\n' +
+    'Friday noon". Or tap the MailBrah icon at the bottom of this message for\n' +
+    'the buttons.';
 }
 
 // ---- Seen-message-ID cache and failure counters (trigger-only, under lock) ----

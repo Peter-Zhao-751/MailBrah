@@ -27,6 +27,10 @@ var CONFIG = {
   // (higher free quota). Check limits at https://aistudio.google.com/rate-limit
   GEMINI_MODEL: 'gemini-3.7-flash',
 
+  // Tried in order when the model above is overloaded (HTTP 503) or
+  // rate-limited (HTTP 429) — the newest model sheds free-tier load first.
+  GEMINI_FALLBACK_MODELS: ['gemini-3.5-flash', 'gemini-3.5-flash-lite'],
+
   // Safety caps per trigger run, to stay far inside free quotas.
   MAX_THREADS_PER_RUN: 10,
   MAX_LLM_CALLS_PER_RUN: 12,
@@ -53,25 +57,51 @@ var CONFIG = {
   // mis-extractions (wrong-year dates and similar).
   MAX_EVENT_HORIZON_DAYS: 370,
 
-  // When true, MailBrah emails you a summary whenever new "not sure — you
-  // decide" events appear. Opening that email in the Gmail app surfaces the
-  // MailBrah card with Accept/Decline buttons right there.
+  // Your waking window. When a reply command gives no clock time ("get
+  // altoids tomorrow"), the event is slotted into the EARLIEST free gap on
+  // your calendar inside this window — never before you're up.
+  DAY_START_HOUR: 9,
+  DAY_END_HOUR: 22,
+
+  // Master switch for notification emails. When true you get:
+  //  - ONE morning digest (below) listing everything awaiting a decision, and
+  //  - an immediate email only when a newly found item happens TODAY.
+  // REPLYING to either in plain words ("add the career fair, decline the
+  // rest") is a command — Gemini interprets it and acts on the next scan.
   SEND_DECISION_NOTIFICATIONS: true,
 
+  // When the daily digest goes out (script timezone). nearMinute means
+  // Google fires it within ±15 min of DIGEST_HOUR:DIGEST_MINUTE.
+  DIGEST_HOUR: 8,
+  DIGEST_MINUTE: 30,
+
+  // Max reply-command messages interpreted per scan (1 Gemini call each).
+  MAX_REPLY_COMMANDS_PER_RUN: 5,
+
+  // An undecided item is dropped after this long in the queue (and always
+  // once its event has passed) — keeps the card and emails concise. If a
+  // fresh email about the same event arrives later, it gets asked anew.
+  PENDING_MAX_AGE_HOURS: 48,
+
   // Trigger frequency in minutes (used by setup()). Valid: 1, 5, 10, 15, 30.
-  TRIGGER_EVERY_MINUTES: 30,
+  // 5 is the sweet spot: near-realtime replies/emails at ~20% of the free
+  // tier's 90-min/day trigger-runtime quota. Every-1-minute would spend most
+  // of that quota on idle runs and risk dead runs late in the day.
+  TRIGGER_EVERY_MINUTES: 5,
 
   // Gradescope deadline sync (active once setGradescopeCredentials() is run).
-  // Scraped every N hours during a normal trigger run; unsubmitted future
-  // assignments become Google Tasks.
-  GS_SCAN_EVERY_HOURS: 6,
+  // Kept at hours, not minutes, on purpose: this is screen-scraping a login-
+  // protected site — hammering it risks rate limiting or bot protection
+  // flagging your account. Assignments post a few times a week anyway.
+  GS_SCAN_EVERY_HOURS: 3,
   GS_MAX_COURSES: 8,
 
   // Brightspace (D2L) deadline sync. Paste your personal calendar-feed URL:
   // Brightspace > Calendar > Settings (gear) > Enable Calendar Feed >
   // Subscribe > All Calendars and Tasks > copy URL. Leave '' to disable.
+  // A single cheap fetch of an official feed — hourly is fine.
   BRIGHTSPACE_ICS_URL: '',
-  BS_SCAN_EVERY_HOURS: 6,
+  BS_SCAN_EVERY_HOURS: 1,
 
   // Free-form guidance injected into the LLM prompt. Edit to taste — this is
   // where "intelligently" gets personalized.
@@ -105,5 +135,6 @@ var PROPS = {
   GS_PASSWORD: 'GS_PASSWORD',
   GS_COOKIES: 'MB_GS_COOKIES',     // cached Gradescope session cookies
   GS_LAST: 'MB_GS_LAST',           // epoch ms of last Gradescope scan
-  BS_LAST: 'MB_BS_LAST'            // epoch ms of last Brightspace feed scan
+  BS_LAST: 'MB_BS_LAST',           // epoch ms of last Brightspace feed scan
+  PRUNE_LAST: 'MB_PRUNE_LAST'      // epoch ms of last decided-store pruning
 };
