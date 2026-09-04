@@ -64,7 +64,8 @@ var CONFIG = {
   DAY_END_HOUR: 22,
 
   // Master switch for notification emails. When true you get:
-  //  - ONE morning digest (below) listing everything awaiting a decision, and
+  //  - ONE morning digest (below) every day, listing everything awaiting a
+  //    decision (or confirming nothing is), and
   //  - an immediate email only when a newly found item happens TODAY.
   // REPLYING to either in plain words ("add the career fair, decline the
   // rest") is a command — Gemini interprets it and acts on the next scan.

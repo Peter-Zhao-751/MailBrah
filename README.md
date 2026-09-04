@@ -47,7 +47,7 @@ If the Tasks service is unavailable, MailBrah creates an all-day calendar event 
 
 Committed events and clear academic deadlines appear automatically.
 
-Optional events collect in a pending queue. MailBrah sends one morning digest around 8:30 AM when there is something waiting. If it discovers an undecided event happening today, it sends an immediate email instead of waiting for the next morning.
+Optional events collect in a pending queue. MailBrah sends one morning digest around 8:30 AM every day. It lists anything waiting for a decision, or confirms that nothing is waiting and when the last inbox scan ran. If it discovers an undecided event happening today, it sends an immediate email instead of waiting for the next morning.
 
 You can make decisions in two ways.
 

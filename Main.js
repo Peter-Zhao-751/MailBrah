@@ -292,14 +292,28 @@ function sendUrgentNotification_(titles) {
 
 /**
  * Daily digest, fired by its own ~8:30 AM trigger (installed by setup()).
- * One email a day listing everything pending; silent when there is nothing.
+ * Sends every morning, listing pending decisions or confirming nothing is waiting.
  */
 function sendDailyDigest() {
   if (!CONFIG.SEND_DECISION_NOTIFICATIONS) return;
   var pending = listPending_();
-  if (!pending.length) return;
   var me = notificationRecipient_();
   if (!me) return;
+  if (!pending.length) {
+    var lastRun = PropertiesService.getScriptProperties().getProperty(PROPS.LAST_RUN);
+    var lastScan = lastRun
+      ? 'Last inbox scan: ' + Utilities.formatDate(new Date(Number(lastRun)), CONFIG.TIMEZONE, 'EEE, MMM d · h:mm a')
+      : 'Last inbox scan: never — run processInbox()';
+    var emptyBody = [
+      'Good morning — nothing is waiting for a decision.',
+      '',
+      lastScan,
+      '',
+      replyHint_()
+    ].join('\n');
+    GmailApp.sendEmail(me, '[MailBrah] Morning digest — nothing waiting', emptyBody);
+    return;
+  }
   var lines = pending.map(function (p) {
     var when = p.kind === 'deadline'
       ? 'Due ' + Utilities.formatDate(new Date(p.startIso), CONFIG.TIMEZONE, 'EEE, MMM d · h:mm a')
